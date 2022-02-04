@@ -1,0 +1,84 @@
+service: notification-api
+configValidationMode: warn
+variablesResolutionMode: 20210326
+plugins:
+  - serverless-python-requirements
+  - serverless-prune-plugin
+
+custom:
+  appEnv: notification-api-${opt:stage}
+  pythonRequirements:
+    dockerizePip: non-linux
+    slim: true
+    slimPatterns:
+      - '**/*.so'
+    pythonBin: C:\Users\David\.pyenv\pyenv-win\shims\python.bat
+  prune:
+    automatic: true
+    number: 3
+package:
+  patterns:
+    - '!./**'
+    - src/**
+
+provider:
+  name: aws
+  runtime: python3.8
+  memorySize: 512
+  region: us-east-2
+  timeout: 10
+  lambdaHashingVersion: 20201221
+  # TODO: Make CORS more restrictive
+  httpApi:
+    cors: true
+  stackPolicy:
+    - Effect: Allow
+      Principal: '*'
+      Action: 'Update:*'
+      Resource: '*'
+    - Effect: Deny
+      Principal: '*'
+      Resource: '*'
+      Action:
+        - Update:Replace
+        - Update:Delete
+      Condition:
+        StringEquals:
+          ResourceType:
+            - AWS::DynamoDB::Table
+  iam:
+    role:
+      statements:
+        - Effect: Allow
+          Action:
+            - dynamodb:GetItem
+            - dynamodb:Query
+            - dynamodb:Scan
+          Resource: arn:aws:dynamodb:${aws:region}:*:table/${self:custom.appEnv}*
+
+
+resources:
+  Resources:
+    userNotificationsTable:
+      Type: AWS::DynamoDB::Table
+      Properties:
+        TableName: ${self:custom.appEnv}-UserNotifications
+        BillingMode: PAY_PER_REQUEST
+        AttributeDefinitions:
+          - AttributeName: user_id
+            AttributeType: S
+          - AttributeName: notification_id
+            AttributeType: S
+        KeySchema:
+          - AttributeName: user_id
+            KeyType: HASH
+          - AttributeName: notification_id
+            KeyType: RANGE
+
+functions:
+  get-user-notifications:
+    handler: src.lambdas.notifications.get_user_notifications
+    events:
+      - httpApi:
+          method: get
+          path: /users/{user_id}/notifications
